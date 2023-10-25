@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: default
+  name: dns-test
+spec:
+  containers:
+  - name: dns-test
+    image: arisu1000/simple-container-app:latest
+    volumeMounts:
+    - name: registry-credentials
+      mountPath: /kaniko/.docker
+    - name: registry-cert
+      mountPath: /kaniko/ssl/certs/
+  dnsPolicy: ClusterFirst
+  dnsConfig:
+    nameservers:
+    - 8.8.8.8
+    searches:
+    - example.com
+    options:
+    - name: name01
+      value: value01
+    - name: name02
+  volumes:
+  - name: registry-credentials
+    secret:
+      secretName: regcred
+      items:
+      - key: .dockerconfigjson
+        path: config.json
+  - name: registry-cert
+    secret:
+      secretName: ca-cert-secret

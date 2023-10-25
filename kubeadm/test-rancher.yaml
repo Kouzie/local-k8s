@@ -1,0 +1,42 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-hostpath
+spec:
+  accessModes:
+  - ReadWriteOnce
+  volumeMode: Filesystem
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-simple-app
+  labels:
+    app: kubernetes-simple-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubernetes-simple-app
+  template:
+    metadata:
+      labels:
+        app: kubernetes-simple-app
+    spec:
+      containers:
+      - name: kubernetes-simple-app
+        image: arisu1000/simple-container-app:latest
+        ports:
+        - containerPort: 8080
+        imagePullPolicy: Always
+        volumeMounts: # 볼륨 매핑
+        - mountPath: "/tmp"
+          name: myvolume
+      volumes: # 볼륨 설정
+      - name: myvolume
+        persistentVolumeClaim: # PVC 설정
+          claimName: pvc-hostpath
