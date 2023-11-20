@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: rabbitmq-ns
+  name: rabbitmq-secret
+stringData:
+  SEED_USERNAME: guest
+  SEED_PASSWORD: guest
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: rabbitmq-ns
+  name: rabbitmq
+spec:
+  replicas: 1
+  serviceName: rabbitmq
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: rabbitmq
+          image: core.harbor.domain/library/rabbitmq_mqtt:latest
+          envFrom:
+            - secretRef:
+                name: rabbitmq-secret
+          volumeMounts:
+            - mountPath: /var/lib/rabbitmq
+              name: rabbitmq-pv
+      volumes:
+        - name: rabbitmq-pv
+          persistentVolumeClaim:
+            claimName: rabbitmq-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: rabbitmq-ns  
+  name: rabbitmq-svc
+  annotations:
+    metallb.universe.tf/allow-shared-ip: my-lb-service
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 192.168.10.XXX
+  selector:
+    app: rabbitmq
+  ports:
+    - port: 15672
+      name: rabbitmq-web
+      targetPort: 15672
+    - port: 5672
+      name: rabbitmq-amqp
+      targetPort: 5672
+    - port: 1883
+      name: rabbitmq-mqpp
+      targetPort: 1883
