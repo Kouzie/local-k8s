@@ -1,29 +1,3 @@
-
-## host file 참고
-
-nginx ingress 를 통해 접속할 수 있도록 `로컬 PC` `hosts` 파일 수정  
-
-```
-192.168.10.XXX  core.harbor.domain jenkins.cluster.local argocd.example.com minio-example.local console.minio-example.local
-```
-
-### 접속방법
-
-<https://core.harbor.domain/>
-admin/Harbor12345
-
-<https://jenkins.cluster.local/>
-admin/...
-
-<https://argocd.example.com>
-admin/...
-
-<https://console.minio-example.local/>
-rootuser/rootpass123
-
-<https://kibana-example.es.local/app/home>
-elastic/password
-
 ## kubadm
 
 > <https://tech.hostway.co.kr/2022/08/30/1374/>
@@ -385,6 +359,11 @@ docker tag hello:demo core.harbor.domain/library/hello:demo
 docker push core.harbor.domain/library/hello:demo
 ```
 
+host 파일에 아래 domain 입력 후 접속
+
+<https://core.harbor.domain/>
+admin/Harbor12345
+
 ## jenkins
 
 > <https://github.com/jenkinsci/helm-charts>
@@ -429,9 +408,6 @@ cd jenkins-helm
 # namespace 생성
 kubectl create ns jenkins
 helm install jenkins -f values.yaml . -n jenkins
-# 비밀번호 확인
-kubectl exec --namespace jenkins -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
-
 watch kubectl get pods -n jenkins
 ```
 
@@ -508,6 +484,14 @@ envsubst < harber-jenkins-secret.yaml | \
 kubectl apply -f -
 ```
 
+<https://jenkins.cluster.local/>
+admin/...
+
+```sh
+# 비밀번호 확인
+kubectl exec --namespace jenkins -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
+```
+
 ## argoCd
 
 ```shell
@@ -549,10 +533,15 @@ cd argo-cd-helm
 kubectl create ns argocd
 helm install argocd -f values.yaml . -n argocd
 
+watch kubectl get pods -n jenkins
+```
+
+<https://argocd.example.com>
+admin/...
+
+```sh
 # 비밀번호 확인
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-
-watch kubectl get pods -n jenkins
 ```
 
 ## minio
@@ -562,6 +551,48 @@ watch kubectl get pods -n jenkins
 > 지원 중단된 문법이 많아 별도의 CRD 를 설치하지 않는이상 동작하지 않는다.  
 >
 > 위 github 링크 참조하여 helm 으로 minio 설치  
+
+먼저 minio 에서 사용할 minio-pv 생성
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: rancher.io/local-path
+  finalizers:
+  - kubernetes.io/pv-protection
+  name: minio-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 100Gi
+  hostPath:
+    path: /home/k8s-storage/minio-pv
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - beylesswsg
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-path
+  volumeMode: Filesystem
+status:
+  phase: Bound
+```
+
+기존 배포되어있는 pv 를 참고해서 만들면 쉽게 만들 수 있다.
+
+```sh
+kubectl get pv <pvnmae> -o yaml
+```
+
+문제가 발생하면 생성되었던 pv, pvc 를 삭제하고 다시 만들면 됨(directory 가 삭제되지 않음)
 
 ```shell
 kubectl create ns minio
@@ -595,7 +626,7 @@ consoleIngress:
 
 ```yaml
 storageClass: "local-path"
-volumeName: ""
+volumeName: "minio-pv" # 위에서 설정한 pv name 지정
 accessMode: ReadWriteOnce
 size: 100Gi
 ```
@@ -617,6 +648,10 @@ kubectl create ns minio
 helm install minio -f values.yaml . -n minio
 ```
 
+호스트파일에 아래 domain 을 입력하고 접속
+
+<https://console.minio-example.local/>
+rootuser/rootpass123
 
 ## rabbitmq
 
@@ -753,3 +788,168 @@ ingress:
 ```
 helm install kibana -f values.yaml . -n es
 ```
+
+아래 domain host 파일에 입력 후 접속  
+
+<https://kibana-example.es.local/app/home>
+elastic/password
+
+## monitoring
+
+- OTEL  
+- LGTM
+  - Loki, like Prometheus, but for logs.
+  - Grafana, the open and composable observability and data visualization platform.
+  - Tempo, a high volume, minimal dependency distributed tracing backend.
+  - Mimir, the most scalable Prometheus backend.
+
+### OTEL Collector(Daemon)
+
+> <https://github.com/open-telemetry/opentelemetry-helm-charts>
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+
+# 압축파일 다운로드, opentelemetry-collector-0.78.1.tgz 버전 설치됨
+helm fetch open-telemetry/opentelemetry-collector
+
+# 압축 파일 해제
+tar zxvf opentelemetry-collector-*.tgz
+mv opentelemetry-collector opentelemetry-collector-helm
+```
+
+```sh
+cd opentelemetry-collector-helm
+kubectl create ns monitoring
+helm install opentelemetry-collecor -f values.yaml . -n monitoring
+```
+
+### Loki
+
+> <https://grafana.com/docs/loki/latest/setup/install/helm/>
+
+```shell
+helm repo add grafana https://grafana.github.io/helm-charts
+helm search repo grafana
+
+# 압축파일 다운로드, opentelemetry-collector-0.78.1.tgz 버전 설치됨
+helm fetch grafana/loki-simple-scalable
+
+# 압축 파일 해제
+tar zxvf loki-simple-scalable-*.tgz
+mv loki-simple-scalable loki-simple-scalable-helm
+```
+
+self-monitoring 분야를 모두 종료했다 (오류때문에)
+
+```yaml
+selfMonitoring:
+  enabled: false
+```
+
+```sh
+    s3:
+      s3: null
+      endpoint: minio.minio.svc.cluster.local:9000
+      region: null
+      secretAccessKey: rootpass123
+      accessKeyId: rootuser
+      s3ForcePathStyle: true # 도메인이 아닌 경로로 
+      insecure: true
+```
+
+### Grafana
+
+> <https://github.com/grafana/helm-charts>
+
+```shell
+helm repo add grafana https://grafana.github.io/helm-charts
+helm search repo grafana
+
+# 압축파일 다운로드, opentelemetry-collector-0.78.1.tgz 버전 설치됨
+helm fetch grafana/grafana
+
+# 압축 파일 해제
+tar zxvf grafana-*.tgz
+mv grafana grafana-helm
+```
+
+```yaml
+# ingress 설정
+ingress:
+  enabled: true
+  annotations: 
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: "true"
+  labels: {}
+  path: /
+
+# storage class pvc 설정
+persistence:
+  type: pvc
+  enabled: true
+  storageClassName: "local-path"
+```
+
+```sh
+helm install grafana -f values.yaml . -n monitoring
+```
+
+```sh
+kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo 
+# strongpassword
+```
+
+chart-example.local 를 hosts 파일에 등록 후 접속
+
+### Tempo
+
+> <https://grafana.com/docs/tempo/latest/setup/helm-chart/>
+
+
+```shell
+helm repo add grafana https://grafana.github.io/helm-charts
+helm search repo grafana
+
+# 압축파일 다운로드, tempo-1.7.1.tgz 버전 설치됨, 모놀리식 버전
+helm fetch grafana/tempo
+
+# 압축 파일 해제
+tar zxvf tempo-*.tgz
+mv tempo tempo-helm
+```
+
+### Thanos
+
+> <https://grafana.com/docs/mimir/latest/>  
+> <https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/>
+>
+> <https://github.com/thanos-io/thanos>  
+> <https://thanos.io/tip/thanos/quick-tutorial.md/>  
+
+원래는 Mimir 설치 예정이었으나 부족한 문서와 환경으로 인해 thanos 설치로 변경
+
+```shell
+kubectl create namespace thanos
+
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm search repo bitnami
+
+# 압축파일 다운로드, thanos-12.23.0.tgz 설치됨
+helm fetch bitnami/thanos
+
+# 압축 파일 해제
+tar zxvf thanos-*.tgz
+mv thanos thanos-helm
+```
+
+persistentVolume 비활성화
+
+```sh
+  persistence:
+    ## @param compactor.persistence.enabled Enable data persistence using PVC(s) on Thanos Compactor pods
+    ##
+    enabled: false
+```
+
+> compactor 과정에서 노드 종료시 데이터 손실 인정
