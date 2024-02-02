@@ -86,7 +86,7 @@ bucketCacheConfig: ""
 ## @param existingObjstoreSecret Secret with Objstore Configuration
 ## Note: This will override objstoreConfig
 ##
-existingObjstoreSecret: ""
+existingObjstoreSecret: "thanos-objstore-secret"
 ## @param existingObjstoreSecretItems Optional item list for specifying a custom Secret key. If so, path should be objstore.yml
 ##
 existingObjstoreSecretItems: []
@@ -179,7 +179,9 @@ query:
     sidecarsNamespace: ""
   ## @param query.stores Statically configure store APIs to connect with Thanos Query
   ##
-  stores: []
+  # stores: []
+  stores: 
+  - prometheus-kube-prometheus-thanos-discovery.prometheus.svc.cluster.local:10901
   ## @param query.sdConfig Query Service Discovery Configuration
   ## Specify content for servicediscovery.yml
   ##
@@ -880,7 +882,12 @@ queryFrontend:
   ## @param queryFrontend.config Thanos Query Frontend configuration
   ## Specify content for config.yml
   ##
-  config: ""
+  config:
+    type: IN-MEMORY
+    config:
+      max_size: 512MB
+      max_size_items: 100
+      validity: 120s
   ## @param queryFrontend.existingConfigmap Name of existing ConfigMap with Thanos Query Frontend configuration
   ## NOTE: This will override queryFrontend.config
   ##
@@ -1776,7 +1783,7 @@ bucketweb:
 compactor:
   ## @param compactor.enabled Enable/disable Thanos Compactor component
   ##
-  enabled: false
+  enabled: true
   ## @param compactor.logLevel Thanos Compactor log level
   ##
   logLevel: info
@@ -1790,7 +1797,7 @@ compactor:
   ##
   retentionResolutionRaw: 30d
   retentionResolution5m: 30d
-  retentionResolution1h: 10y
+  retentionResolution1h: 1y # 10y is too long
   ## @param compactor.consistencyDelay Minimum age of fresh (non-compacted) blocks before they are being processed
   ##
   consistencyDelay: 30m
@@ -2258,7 +2265,7 @@ compactor:
 storegateway:
   ## @param storegateway.enabled Enable/disable Thanos Store Gateway component
   ##
-  enabled: false
+  enabled: true
   ## @param storegateway.logLevel Thanos Store Gateway log level
   ##
   logLevel: info
@@ -2268,7 +2275,12 @@ storegateway:
   ## @param storegateway.config Thanos Store Gateway configuration
   ## Specify content for config.yml
   ##
-  config: ""
+  config:
+    type: IN-MEMORY
+    config:
+      max_size: 300MB
+      max_item_size: 120MB
+
   ## @param storegateway.existingConfigmap Name of existing ConfigMap with Thanos Store Gateway configuration
   ## NOTE: This will override storegateway.config
   ##
@@ -2613,7 +2625,7 @@ storegateway:
   persistence:
     ## @param storegateway.persistence.enabled Enable data persistence using PVC(s) on Thanos Store Gateway pods
     ##
-    enabled: true
+    enabled: false
     ## @param storegateway.persistence.storageClass Specify the `storageClass` used to provision the volume
     ## If defined, storageClassName: <storageClass>
     ## If set to "-", storageClassName: "", which disables dynamic provisioning
@@ -2912,7 +2924,7 @@ storegateway:
 ruler:
   ## @param ruler.enabled Enable/disable Thanos Ruler component
   ##
-  enabled: false
+  enabled: true
   ## @param ruler.logLevel Thanos Ruler log level
   ##
   logLevel: info
@@ -2932,7 +2944,9 @@ ruler:
   ## @param ruler.alertmanagers Alert managers URLs array
   ## NOTE: This is only used when ruler.alertmanagersConfig is not set
   ##
-  alertmanagers: []
+  # alertmanagers: []
+  alertmanagers: 
+  - http://prometheus-kube-prometheus-alertmanager.prometheus.svc.cluster.local:9093
   ## @param ruler.alertmanagersConfig Alert managers configuration
   ## NOTE: This is only used when ruler.alertmanagers is not set
   ## ref: https://thanos.io/tip/components/rule.md/#alertmanager
@@ -2959,7 +2973,13 @@ ruler:
   ## @param ruler.config Ruler configuration
   ## Specify content for ruler.yml
   ##
-  config: ""
+  config:
+    groups:
+      - name: "metamonitoring"
+        rules:
+          - alert: "PrometheusDown"
+            expr: absent(up{prometheus="monitoring/prometheus-operator"})
+      
   ## @param ruler.existingConfigmap Name of existing ConfigMap with Ruler configuration
   ## NOTE: This will override ruler.config
   ##
@@ -3042,7 +3062,7 @@ ruler:
   ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
   ## @param ruler.resources.limits The resources limits for the Thanos Ruler container
   ## @param ruler.resources.requests The requested resources for the Thanos Ruler container
-  ##
+  ##tja
   resources:
     limits: {}
     requests: {}
@@ -3275,7 +3295,7 @@ ruler:
   persistence:
     ## @param ruler.persistence.enabled Enable data persistence using PVC(s) on Thanos Ruler pods
     ##
-    enabled: true
+    enabled: false
     ## @param ruler.persistence.storageClass Specify the `storageClass` used to provision the volume
     ## If defined, storageClassName: <storageClass>
     ## If set to "-", storageClassName: "", which disables dynamic provisioning
@@ -3849,7 +3869,7 @@ receive:
   persistence:
     ## @param receive.persistence.enabled Enable data persistence using PVC(s) on Thanos Receive pods
     ##
-    enabled: true
+    enabled: false
     ## @param receive.persistence.storageClass Specify the `storageClass` used to provision the volume
     ## If defined, storageClassName: <storageClass>
     ## If set to "-", storageClassName: "", which disables dynamic provisioning

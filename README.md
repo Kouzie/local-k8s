@@ -929,6 +929,7 @@ mv tempo tempo-helm
 
 원래는 Mimir 설치 예정이었으나 부족한 문서와 환경으로 인해 thanos 설치로 변경
 
+
 ```shell
 kubectl create namespace thanos
 
@@ -943,13 +944,135 @@ tar zxvf thanos-*.tgz
 mv thanos thanos-helm
 ```
 
-persistentVolume 비활성화
+s3 에 접근하기 위한 secret 설정을 해야 `[compact, ruler, store]` 컴포넌트 사용이 가능하다. 
+
+```yaml
+# objstore.yml
+type: s3
+config:
+  bucket: thanos
+  endpoint: minio.minio.svc.cluster.local:9000
+  access_key: rootuser
+  secret_key: rootpass123
+  insecure: true
+```
 
 ```sh
+kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n prometheus
+kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n thanos
+```
+
+```yaml
+existingObjstoreSecret: "thanos-objstore-secret"
+## @param existingObjstoreSecretItems Optional item list for specifying a custom Secret key. If so, path should be objstore.yml
+```
+
+사이드카 방식을 사용함으로 receive 컴포넌트를 제외한 모든 컴포넌트를 `enable: true` 로 설정  
+
+```sh
+query:
+  # ...
+  stores: 
+  # prometheus thanos sidecar service name
+  - prometheus.prometheus-kube-prometheus-thanos-discovery.svc.cluster.local:10901
+
+
+queryFrontend:
+  enabled: true
+  # ...
+  config:
+    type: IN-MEMORY
+    config:
+      max_size: 512MB
+      max_size_items: 100
+      validity: 120s
+
+compactor:
+  enabled: true
+  # ...
+  retentionResolutionRaw: 30d
+  retentionResolution5m: 30d
+  retentionResolution1h: 1y # 10y is too long
   persistence:
     ## @param compactor.persistence.enabled Enable data persistence using PVC(s) on Thanos Compactor pods
     ##
     enabled: false
+
+storegateway:
+  enabled: true
+  # ...
+  config:
+    type: IN-MEMORY
+    config:
+      max_size: 300MB
+      max_item_size: 120MB
+  persistence:
+    ## @param storegateway.persistence.enabled Enable data persistence using PVC(s) on Thanos Store Gateway pods
+    ##
+    enabled: false
+
+ruler:
+  enabled: true
+  # ...
+  alertmanagers: 
+    - http://prometheus.prometheus-kube-prometheus-alertmanager.svc.cluster.local:9093
+  config:
+    groups:
+      - name: "metamonitoring"
+        rules:
+          - : "PrometheusDown"
+            expr: absent(up{prometheus="monitoring/prometheus-operator"})
+  persistence:
+    ## @param ruler.persistence.enabled Enable data persistence using PVC(s) on Thanos Ruler pods
+    ##
+    enabled: false
 ```
 
-> compactor 과정에서 노드 종료시 데이터 손실 인정
+### prometheus-community
+
+thanos 는 prometheus 를 기반으로 동작하기 때문에 서로 의존관계이다.  
+prometheus 에서도 thanos 연동을 위한 설정을 해줘야한다.  
+
+```sh
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm search repo prometheus-community
+
+# 압축파일 다운로드, kube-prometheus-stack-56.4.0.tgz 버전 설치됨
+helm fetch prometheus-community/kube-prometheus-stack
+
+# 압축 파일 해제
+tar zxvf kube-prometheus-stack-*.tgz
+mv kube-prometheus-stack kube-prometheus-stack-helm
+```
+
+```yaml
+    thanos:
+      objectStorageConfig:
+        secret: 
+          type: S3
+          config:
+            bucket: "thanos-prometheus"
+            endpoint: minio.minio.svc.cluster.local:9000
+            region: ""
+            access_key: rootuser
+            secret_key: rootpass123
+
+  thanosService:
+    enabled: true
+```
+
+위와 같이 설정후 prometheus 를 실행시키면 thanos 사이트카가 같이 실행된다.  
+
+```sh
+kubectl create namespace prometheus
+helm install prometheus -f values.yaml . -n prometheus
+```
+
+파드에서 아래 3개의 컨테이너 동작중
+
+```sh
+kubectl get pod/prometheus-prometheus-kube-prometheus-prometheus-0 -n prometheus  -o=jsonpath='{.spec.containers[*].name}' | tr ' ' '\n'
+# prometheus
+# config-reloader
+# thanos-sidecar
+```
