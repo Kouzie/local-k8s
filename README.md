@@ -962,19 +962,17 @@ kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n
 kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n thanos
 ```
 
-```yaml
-existingObjstoreSecret: "thanos-objstore-secret"
-## @param existingObjstoreSecretItems Optional item list for specifying a custom Secret key. If so, path should be objstore.yml
-```
-
 사이드카 방식을 사용함으로 receive 컴포넌트를 제외한 모든 컴포넌트를 `enable: true` 로 설정  
 
 ```sh
+existingObjstoreSecret: "thanos-objstore-secret"
+## @param existingObjstoreSecretItems Optional item list for specifying a custom Secret key. If so, path should be objstore.yml
+
 query:
   # ...
   stores: 
   # prometheus thanos sidecar service name
-  - prometheus.prometheus-kube-prometheus-thanos-discovery.svc.cluster.local:10901
+  - prometheus-kube-prometheus-thanos-discovery.prometheus.svc.cluster.local:10901
 
 
 queryFrontend:
@@ -1015,7 +1013,7 @@ ruler:
   enabled: true
   # ...
   alertmanagers: 
-    - http://prometheus.prometheus-kube-prometheus-alertmanager.svc.cluster.local:9093
+    - http://prometheus-kube-prometheus-alertmanager.prometheus.svc.cluster.local:9093
   config:
     groups:
       - name: "metamonitoring"
@@ -1061,7 +1059,7 @@ mv kube-prometheus-stack kube-prometheus-stack-helm
     enabled: true
 ```
 
-위와 같이 설정후 prometheus 를 실행시키면 thanos 사이트카가 같이 실행된다.  
+위와 같이 설정후 실행시키면 `Proemetheus` 와 `Thanos Sidecar` 가 같이 실행된다.  
 
 ```sh
 kubectl create namespace prometheus
