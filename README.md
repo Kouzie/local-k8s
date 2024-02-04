@@ -824,39 +824,105 @@ kubectl create ns monitoring
 helm install opentelemetry-collecor -f values.yaml . -n monitoring
 ```
 
+```yaml
+tempo:
+  storage:
+    trace:
+      # tempo storage backend
+      # refer https://grafana.com/docs/tempo/latest/configuration/
+      ## Use s3 for example
+      backend: s3
+      # store traces in s3
+      s3:
+        bucket: tempo                                   # store traces in this bucket
+        endpoint: s3.dualstack.us-east-2.amazonaws.com  # api endpoint
+        access_key: ...                                 # optional. access key when using static credentials.
+        secret_key: ...                                 # optional. secret key when using static credentials.
+        insecure: false                                 # optional. enable if endpoint is http
+      # backend: local
+```
+
 ### Loki
 
-> <https://grafana.com/docs/loki/latest/setup/install/helm/>
+> <https://grafana.com/docs/loki/latest/setup/install/helm/>  
+> <https://grafana.com/docs/loki/latest/setup/install/helm/install-scalable>
 
 ```shell
 helm repo add grafana https://grafana.github.io/helm-charts
 helm search repo grafana
 
-# 압축파일 다운로드, opentelemetry-collector-0.78.1.tgz 버전 설치됨
-helm fetch grafana/loki-simple-scalable
+# 압축파일 다운로드, loki-5.42.0.tgz 버전 설치됨
+helm fetch grafana/loki
 
 # 압축 파일 해제
-tar zxvf loki-simple-scalable-*.tgz
-mv loki-simple-scalable loki-simple-scalable-helm
+tar zxvf loki-*.tgz
+mv loki loki-helm
 ```
 
-self-monitoring 분야를 모두 종료했다 (오류때문에)
 
 ```yaml
-selfMonitoring:
+# self-monitoring 미사용  
+test:
+  # ...
   enabled: false
-```
 
-```sh
+monitoring:
+  # ...
+  selfMonitoring:
+    enabled: false
+
+loki:
+  # ...
+  # Should authentication be enabled
+  auth_enabled: false
+  # ...
+  storage:
+    bucketNames:
+      chunks: chunks
+      ruler: ruler
+      admin: admin
+    type: s3
     s3:
       s3: null
-      endpoint: minio.minio.svc.cluster.local:9000
+      endpoint: http://minio.minio.svc.cluster.local:9000/loki
       region: null
       secretAccessKey: rootpass123
       accessKeyId: rootuser
-      s3ForcePathStyle: true # 도메인이 아닌 경로로 
+      signatureVersion: null
+      s3ForcePathStyle: true
       insecure: true
+      http_config: {}
+
+# 각 서비스별 replicas 수는 모두 1로 고정  
+read:
+  # ...
+  replicas: 1
+  persistence:
+    # -- Enable StatefulSetAutoDeletePVC feature
+    enableStatefulSetAutoDeletePVC: false
+    
+write:
+  # ...
+  replicas: 1
+  persistence:
+    # -- Enable volume claims in pod spec
+    volumeClaimsEnabled: false
+
+backend:
+  # ...
+  replicas: 1      
+  persistence:
+    # -- Enable volume claims in pod spec
+    volumeClaimsEnabled: false
 ```
+
+mionio 를 s3 대신 사용할 경우 위와같이 uri 기반으로 bucket 이름을 설정해야함.  
+
+```sh
+kubectl create namepsace loki
+helm install loki -f values.yaml . -n loki
+```
+
 
 ### Grafana
 
@@ -866,7 +932,7 @@ selfMonitoring:
 helm repo add grafana https://grafana.github.io/helm-charts
 helm search repo grafana
 
-# 압축파일 다운로드, opentelemetry-collector-0.78.1.tgz 버전 설치됨
+# 압축파일 다운로드, grafana-7.2.5.tgz 버전 설치됨
 helm fetch grafana/grafana
 
 # 압축 파일 해제
@@ -918,6 +984,28 @@ helm fetch grafana/tempo
 tar zxvf tempo-*.tgz
 mv tempo tempo-helm
 ```
+
+모놀리식 운영방식인 만큼 persistence 와 같은 추가설정 없이 동작되도록 되어있다.  
+s3 에 대한 설정만 지행.
+
+```yaml
+tempo:
+  storage:
+    trace:
+      # tempo storage backend
+      # refer https://grafana.com/docs/tempo/latest/configuration/
+      ## Use s3 for example
+      backend: s3
+      # store traces in s3
+      s3:
+        bucket: tempo                                   # store traces in this bucket
+        endpoint: minio.minio.svc.cluster.local:9000  # api endpoint
+        access_key: rootuser                                 # optional. access key when using static credentials.
+        secret_key: rootpass123                                 # optional. secret key when using static credentials.
+        insecure: true                                 # optional. enable if endpoint is http
+      # backend: local
+```
+
 
 ### Thanos
 
@@ -1043,18 +1131,33 @@ tar zxvf kube-prometheus-stack-*.tgz
 mv kube-prometheus-stack kube-prometheus-stack-helm
 ```
 
+`Thanos Sidecar` 에서 메트릭 데이터를 직접 `ObjectStorage` 에 넣기 때문에 연결 설정이 필요하다.  
+
 ```yaml
+# objstore.yml
+type: s3
+config:
+  bucket: thanos
+  endpoint: minio.minio.svc.cluster.local:9000
+  access_key: rootuser
+  secret_key: rootpass123
+  insecure: true
+```
+
+```sh
+kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n prometheus
+```
+
+```yaml
+# values.yaml
+prometheus:
+  prometheusSpec:
+    # ...
     thanos:
       objectStorageConfig:
-        secret: 
-          type: S3
-          config:
-            bucket: "thanos-prometheus"
-            endpoint: minio.minio.svc.cluster.local:9000
-            region: ""
-            access_key: rootuser
-            secret_key: rootpass123
-
+        existingSecret: 
+          name: "thanos-objstore-secret"
+          key: "objstore.yml"
   thanosService:
     enabled: true
 ```
@@ -1064,11 +1167,7 @@ mv kube-prometheus-stack kube-prometheus-stack-helm
 ```sh
 kubectl create namespace prometheus
 helm install prometheus -f values.yaml . -n prometheus
-```
 
-파드에서 아래 3개의 컨테이너 동작중
-
-```sh
 kubectl get pod/prometheus-prometheus-kube-prometheus-prometheus-0 -n prometheus  -o=jsonpath='{.spec.containers[*].name}' | tr ' ' '\n'
 # prometheus
 # config-reloader

@@ -71,7 +71,7 @@ tempo:
         access_key: rootuser                                 # optional. access key when using static credentials.
         secret_key: rootpass123                                 # optional. secret key when using static credentials.
         insecure: true                                 # optional. enable if endpoint is http
-      backend: local
+      # backend: local
       local:
         path: /var/tempo/traces
       wal:
