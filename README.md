@@ -1206,15 +1206,21 @@ mv fluent-bit fluent-bit-helm
 
 읽어드릴 file, 그리고 OTEL 컬렉터로 전달  
 
-
 ```sh
 heln install fluent-bit -f values.yaml . -n monitoring
 ```
 
+로그파일이 많다면 `too many open files` 에러가 출력될 수 있음.  
+단일 계정 `file descriptor` 사용량 제한에 걸렸기 때문.  
+
+사용량을 영구적으로 늘리기 위해 `/etc/sysctl.conf` 에서 아래 문자열 추가
+
+```sh
 sudo vi /etc/sysctl.conf
 
-영구 변경: 변경사항을 영구적으로 적용하려면, /etc/sysctl.conf 파일을 편집하거나 /etc/sysctl.d/ 디렉토리에 새 설정 파일을 생성해야 합니다. 예를 들어, /etc/sysctl.conf 파일에 다음 라인을 추가합니다:
-
+# sysctl.conf 에 해당 문자열 추가, default 는 256
 fs.inotify.max_user_instances=8192
 
+# 적용
 sudo sysctl -p
+```
