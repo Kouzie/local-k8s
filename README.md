@@ -818,28 +818,36 @@ tar zxvf opentelemetry-collector-*.tgz
 mv opentelemetry-collector opentelemetry-collector-helm
 ```
 
-```sh
-cd opentelemetry-collector-helm
-kubectl create ns monitoring
-helm install opentelemetry-collecor -f values.yaml . -n monitoring
+```yaml
+# Valid values are "daemonset", "deployment", and "statefulset".
+mode: "deployment"
+
+# Specify which namespace should be used to deploy the resources into
+namespaceOverride: "monitoring"
+
+presets:
+  # Configures the collector to collect logs.
+  # Adds the filelog receiver to the logs pipeline
+  # and adds the necessary volumes and volume mounts.
+  # Best used with mode = daemonset.
+  # See https://opentelemetry.io/docs/kubernetes/collector/components/#filelog-receiver for details on the receiver.
+  logsCollection:
+    enabled: false # 직접 로그를 전달하는 것만 기록
+    includeCollectorLogs: false
+
+service:
+  # Enable the creation of a Service.
+  # By default, it's enabled on mode != daemonset.
+  # However, to enable it on mode = daemonset, its creation must be explicitly enabled
+  enabled: true
+
+  type: ClusterIP
 ```
 
-```yaml
-tempo:
-  storage:
-    trace:
-      # tempo storage backend
-      # refer https://grafana.com/docs/tempo/latest/configuration/
-      ## Use s3 for example
-      backend: s3
-      # store traces in s3
-      s3:
-        bucket: tempo                                   # store traces in this bucket
-        endpoint: s3.dualstack.us-east-2.amazonaws.com  # api endpoint
-        access_key: ...                                 # optional. access key when using static credentials.
-        secret_key: ...                                 # optional. secret key when using static credentials.
-        insecure: false                                 # optional. enable if endpoint is http
-      # backend: local
+
+```sh
+kubectl create ns monitoring
+helm install opentelemetry-collecor -f values.yaml . -n monitoring
 ```
 
 ### Loki
@@ -892,6 +900,8 @@ loki:
       s3ForcePathStyle: true
       insecure: true
       http_config: {}
+  commonConfig:
+    replication_factor: 1 # replica 개수대로 동작하지 않으면 로그수집을 진행하지 않음.
 
 # 각 서비스별 replicas 수는 모두 1로 고정  
 read:
@@ -922,7 +932,6 @@ mionio 를 s3 대신 사용할 경우 위와같이 uri 기반으로 bucket 이�
 kubectl create namepsace loki
 helm install loki -f values.yaml . -n loki
 ```
-
 
 ### Grafana
 
@@ -1006,6 +1015,10 @@ tempo:
       # backend: local
 ```
 
+```sh
+kubectl create namespace tempo
+heln install tempo -f values.yaml . -n tempo
+```
 
 ### Thanos
 
@@ -1015,8 +1028,7 @@ tempo:
 > <https://github.com/thanos-io/thanos>  
 > <https://thanos.io/tip/thanos/quick-tutorial.md/>  
 
-원래는 Mimir 설치 예정이었으나 부족한 문서와 환경으로 인해 thanos 설치로 변경
-
+원래는 Mimir 설치 예정이었으나 부족한 문서와 환경으로 인해 thanos 설치로 변경  
 
 ```shell
 kubectl create namespace thanos
@@ -1153,6 +1165,8 @@ kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n
 prometheus:
   prometheusSpec:
     # ...
+    enableRemoteWriteReceiver: true # 외부에서 들어오는 remote_write를 허용
+    # ...
     thanos:
       objectStorageConfig:
         existingSecret: 
@@ -1173,3 +1187,34 @@ kubectl get pod/prometheus-prometheus-kube-prometheus-prometheus-0 -n prometheus
 # config-reloader
 # thanos-sidecar
 ```
+
+### fluentbit
+
+> <https://docs.fluentbit.io/manual/installation/kubernetes>
+> <https://github.com/fluent/helm-charts>  
+
+```sh
+helm repo add fluent https://fluent.github.io/helm-charts
+helm search repo fluent
+
+# 압축파일 다운로드, fluent-bit-0.43.0.tgz 버전 설치됨
+helm fetch fluent/fluent-bit
+# 압축 파일 해제
+tar zxvf fluent-bit-*.tgz
+mv fluent-bit fluent-bit-helm
+```
+
+읽어드릴 file, 그리고 OTEL 컬렉터로 전달  
+
+
+```sh
+heln install fluent-bit -f values.yaml . -n monitoring
+```
+
+sudo vi /etc/sysctl.conf
+
+영구 변경: 변경사항을 영구적으로 적용하려면, /etc/sysctl.conf 파일을 편집하거나 /etc/sysctl.d/ 디렉토리에 새 설정 파일을 생성해야 합니다. 예를 들어, /etc/sysctl.conf 파일에 다음 라인을 추가합니다:
+
+fs.inotify.max_user_instances=8192
+
+sudo sysctl -p

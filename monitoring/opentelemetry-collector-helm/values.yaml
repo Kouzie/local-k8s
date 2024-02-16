@@ -6,7 +6,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Valid values are "daemonset", "deployment", and "statefulset".
-mode: "daemonset"
+mode: "deployment"
 
 # Specify which namespace should be used to deploy the resources into
 namespaceOverride: "monitoring"
@@ -27,7 +27,7 @@ presets:
   # Best used with mode = daemonset.
   # See https://opentelemetry.io/docs/kubernetes/collector/components/#filelog-receiver for details on the receiver.
   logsCollection:
-    enabled: true
+    enabled: false
     includeCollectorLogs: false
     # Enabling this writes checkpoints in /var/lib/otelcol/ host directory.
     # Note this changes collector's user to root, so that it can write to host directory.
@@ -90,6 +90,21 @@ config:
     # Will be removed in a future release.
     # Use the debug exporter instead.
     logging: {}
+    loki:
+      endpoint: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+      default_labels_enabled: # exporter, job, instance, level
+        # omitted then default labels will be addeds
+        exporter: false
+        job: true
+    otlp/trace:
+      endpoint: http://tempo.tempo.svc.cluster.local:4317 # use oltp protocol
+      tls:
+        insecure: true
+        insecure_skip_verify: true 
+    prometheusremotewrite: # push base, remote write
+      endpoint: "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090/api/v1/write"
+      external_labels:
+        collector_label: ${env:MY_POD_IP}
   extensions:
     # The health_check extension is mandatory for this chart.
     # Without the health_check extension the collector will fail the readiness and liveliness probes.
@@ -100,6 +115,22 @@ config:
     batch: {}
     # If set to null, will be overridden with values based on k8s resource limits
     memory_limiter: null
+    # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/lokiexporter
+    # promotion log attributes otel to loki, 리소스 혹은 로그 속성을 라벨로 승격시키는 작업
+    attributes:
+      actions:
+        - action: insert # insert, update, upsert,
+          key: loki.attribute.labels
+          value: container
+        - action: insert
+          key: loki.format
+          value: json # default value is json
+    resource:
+      attributes:
+        - action: insert
+          key: loki.resource.labels
+          value: service.name, service.namespace
+
   receivers:
     jaeger:
       protocols:
@@ -112,17 +143,17 @@ config:
     otlp:
       protocols:
         grpc:
-          endpoint: ${env:MY_POD_IP}:4317
+          endpoint: 0.0.0.0:4317 # 모든 입력 IP 허용
         http:
-          endpoint: ${env:MY_POD_IP}:4318
-    prometheus:
-      config:
-        scrape_configs:
-          - job_name: opentelemetry-collector
-            scrape_interval: 10s
-            static_configs:
-              - targets:
-                  - ${env:MY_POD_IP}:8888
+          endpoint: 0.0.0.0:4318
+    # prometheus:
+    #   config:
+    #     scrape_configs:
+    #       - job_name: opentelemetry-collector
+    #         scrape_interval: 10s
+    #         static_configs:
+    #           - targets:
+    #               - ${env:MY_POD_IP}:8888
     zipkin:
       endpoint: ${env:MY_POD_IP}:9411
   service:
@@ -134,32 +165,17 @@ config:
       - memory_ballast
     pipelines:
       logs:
-        exporters:
-          - debug
-        processors:
-          - memory_limiter
-          - batch
-        receivers:
-          - otlp
+        exporters: [debug, loki]
+        processors: [memory_limiter, batch, attributes, resource]
+        receivers: [otlp]
       metrics:
-        exporters:
-          - debug
-        processors:
-          - memory_limiter
-          - batch
-        receivers:
-          - otlp
-          - prometheus
+        exporters: [debug, prometheusremotewrite]
+        processors: [memory_limiter, batch]
+        receivers: [otlp]
       traces:
-        exporters:
-          - debug
-        processors:
-          - memory_limiter
-          - batch
-        receivers:
-          - otlp
-          - jaeger
-          - zipkin
+        exporters: [debug, otlp/trace]
+        processors: [memory_limiter, batch]
+        receivers: [otlp]
 
 image:
   # If you want to use the core image `otel/opentelemetry-collector`, you also need to change `command.name` value to `otelcol`.
@@ -403,7 +419,7 @@ service:
   # Enable the creation of a Service.
   # By default, it's enabled on mode != daemonset.
   # However, to enable it on mode = daemonset, its creation must be explicitly enabled
-  # enabled: true
+  enabled: true
 
   type: ClusterIP
   # type: LoadBalancer

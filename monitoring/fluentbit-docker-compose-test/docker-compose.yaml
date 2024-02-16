@@ -1,0 +1,7 @@
+version: "3.7"
+services:
+  fluent-bit:
+    image: cr.fluentbit.io/fluent/fluent-bit
+    volumes:
+      - ./etc:/fluent-bit/etc
+      - ./log:/demo
