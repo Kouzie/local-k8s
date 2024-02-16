@@ -39,8 +39,8 @@ tempo:
   reportingEnabled: true
   metricsGenerator:
     # -- If true, enables Tempo's metrics generator (https://grafana.com/docs/tempo/next/metrics-generator/)
-    enabled: false
-    remoteWriteUrl: "http://prometheus.monitoring:9090/api/v1/write"
+    enabled: true
+    remoteWriteUrl: "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090/api/v1/write"
   # -- Configuration options for the ingester
   ingester: {}
   # -- Configuration options for the querier
