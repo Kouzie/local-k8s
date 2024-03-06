@@ -998,49 +998,6 @@ kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-pass
 
 chart-example.local 를 hosts 파일에 등록 후 접속
 
-### Tempo
-
-> <https://grafana.com/docs/tempo/latest/setup/helm-chart/>
-
-
-```shell
-helm repo add grafana https://grafana.github.io/helm-charts
-helm search repo grafana
-
-# 압축파일 다운로드, tempo-1.7.1.tgz 버전 설치됨, 모놀리식 버전
-helm fetch grafana/tempo
-
-# 압축 파일 해제
-tar zxvf tempo-*.tgz
-mv tempo tempo-helm
-```
-
-모놀리식 운영방식인 만큼 persistence 와 같은 추가설정 없이 동작되도록 되어있다.  
-s3 에 대한 설정만 지행.
-
-```yaml
-tempo:
-  storage:
-    trace:
-      # tempo storage backend
-      # refer https://grafana.com/docs/tempo/latest/configuration/
-      ## Use s3 for example
-      backend: s3
-      # store traces in s3
-      s3:
-        bucket: tempo                                   # store traces in this bucket
-        endpoint: minio.minio.svc.cluster.local:9000  # api endpoint
-        access_key: rootuser                                 # optional. access key when using static credentials.
-        secret_key: rootpass123                                 # optional. secret key when using static credentials.
-        insecure: true                                 # optional. enable if endpoint is http
-      # backend: local
-```
-
-```sh
-kubectl create namespace tempo
-heln install tempo -f values.yaml . -n tempo
-```
-
 ### Thanos
 
 > <https://grafana.com/docs/mimir/latest/>  
@@ -1207,6 +1164,59 @@ kubectl get pod/prometheus-prometheus-kube-prometheus-prometheus-0 -n prometheus
 # prometheus
 # config-reloader
 # thanos-sidecar
+```
+
+### Tempo
+
+> <https://grafana.com/docs/tempo/latest/setup/helm-chart/>
+
+msa 형태로 운영되는 tempo-distributed, 단일 서버로 운영되는 monolithic helm 차트 지원
+
+여기선 monolithic 방식을 사용한다.  
+
+```shell
+helm repo add grafana https://grafana.github.io/helm-charts
+helm search repo grafana
+
+# 압축파일 다운로드, tempo-1.7.1.tgz 버전 설치됨, 모놀리식 버전
+helm fetch grafana/tempo
+
+# 압축 파일 해제
+tar zxvf tempo-*.tgz
+mv tempo tempo-helm
+```
+
+모놀리식 운영방식인 만큼 persistence 와 같은 추가설정 없이 동작되도록 되어있다.  
+
+`service graph` 작성을 위한 `prometheus remote write` 과 `s3` 에 대한 설정 지행.
+
+```yaml
+tempo:
+  # ...
+  metricsGenerator:
+  # -- If true, enables Tempo's metrics generator (https://grafana.com/docs/tempo/next/metrics-generator/)
+  enabled: true
+  remoteWriteUrl: "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090/api/v1/write"
+  # ...
+  storage:
+    trace:
+      # tempo storage backend
+      # refer https://grafana.com/docs/tempo/latest/configuration/
+      ## Use s3 for example
+      backend: s3
+      # store traces in s3
+      s3:
+        bucket: tempo                                   # store traces in this bucket
+        endpoint: minio.minio.svc.cluster.local:9000  # api endpoint
+        access_key: rootuser                                 # optional. access key when using static credentials.
+        secret_key: rootpass123                                 # optional. secret key when using static credentials.
+        insecure: true                                 # optional. enable if endpoint is http
+      # backend: local
+```
+
+```sh
+kubectl create namespace tempo
+heln install tempo -f values.yaml . -n tempo
 ```
 
 ### fluentbit
