@@ -850,6 +850,27 @@ kubectl create ns monitoring
 helm install opentelemetry-collecor -f values.yaml . -n monitoring
 ```
 
+### OTEL Colletor(Sidecar)
+
+`sidecar` 방식으로 `OTEL 컬렉터` 설치
+
+> <https://github.com/open-telemetry/opentelemetry-operator>  
+> <https://opentelemetry.io/docs/kubernetes/operator/>  
+> <https://cert-manager.io/docs/installation/helm/>
+
+```shell
+# cert-manager 설치
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.2/cert-manager.yaml
+kubectl get all -n cert-manager
+
+# opentelemetry-operator 설치
+kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+kubectl get all -n opentelemetry-operator-system
+```
+
+`sidecar.opentelemetry.io/inject` 라벨이 설정된 pod 에 sidecar 가 같이 실행됨.  
+
+
 ### Loki
 
 > <https://grafana.com/docs/loki/latest/setup/install/helm/>  
@@ -1224,3 +1245,161 @@ fs.inotify.max_user_instances=8192
 # 적용
 sudo sysctl -p
 ```
+
+## istio
+
+```sh
+helm repo add istio https://istio-release.storage.googleapis.com/charts
+# 압축파일 다운로드, base-1.20.3.tgz 버전 설치됨
+helm fetch istio/base
+# 압축파일 다운로드, istiod-1.20.3.tgz 버전 설치됨
+helm fetch istio/istiod
+
+# 압축 파일 해제
+tar zxvf base-*.tgz
+mv base base-helm
+tar zxvf istiod-*.tgz
+mv istiod istiod-helm
+
+kubectl create namespace istio-system
+```
+
+`istio k8s CRD` 설치
+
+```sh
+# base-helm
+helm install istio-base -f values.yaml . -n istio-system
+
+kubectl get crd 
+# authorizationpolicies.security.istio.io
+# envoyfilters.networking.istio.io
+# istiooperators.install.istio.io
+# peerauthentications.security.istio.io
+# proxyconfigs.networking.istio.io
+# requestauthentications.security.istio.io
+# serviceentries.networking.istio.io
+# sidecars.networking.istio.io
+# telemetries.telemetry.istio.io
+# virtualservices.networking.istio.io
+# wasmplugins.extensions.istio.io
+# ...
+```
+
+`Istio discovery chart` 설치
+
+```sh
+# istiod-helm
+helm install istiod -f values.yaml . -n istio-system
+
+kubectl get all -n istio-system                     
+# NAME                         READY   STATUS    RESTARTS   AGE
+# pod/istiod-bc4584967-pvpgv   1/1     Running   0          6m26s
+
+# NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                                 AGE
+# service/istiod   ClusterIP   10.97.153.154   <none>        15010/TCP,15012/TCP,443/TCP,15014/TCP   6m26s
+
+# NAME                     READY   UP-TO-DATE   AVAILABLE   AGE
+# deployment.apps/istiod   1/1     1            1           6m26s
+
+# NAME                               DESIRED   CURRENT   READY   AGE
+# replicaset.apps/istiod-bc4584967   1         1         1       6m26s
+
+# NAME                                         REFERENCE           TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+# horizontalpodautoscaler.autoscaling/istiod   Deployment/istiod   <unknown>/80%   1         5         1          6m26s
+```
+
+
+```sh
+helm ls -n istio-system
+# NAME            NAMESPACE       REVISION   ...  STATUS    ...  APP VERSION
+# istio-base      istio-system    1          ...  deployed  ...  1.20.3     
+# istiod          istio-system    1          ...  deployed  ...  1.20.3     
+```
+
+book-demo namespace 에 istio-injection 라벨을 설정하고 실행.
+생성되는 pod 에 
+
+```sh
+kubectl create namespace book-demo
+kubectl label namespace book-demo istio-injection=enabled
+kubectl apply -f bookinfo.yaml -n book-demo
+kubectl get all -n book-demo
+# NAME                                 READY   STATUS    RESTARTS   AGE
+# pod/details-v1-698d88b-6ppfv         2/2     Running   0          42s
+# pod/productpage-v1-675fc69cf-lghct   2/2     Running   0          42s
+# pod/ratings-v1-6484c4d9bb-7bt57      2/2     Running   0          42s
+# pod/reviews-v1-5b5d6494f4-8h8fz      2/2     Running   0          42s
+# ...
+
+# NAME                  TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+# service/details       ClusterIP   10.105.228.184   <none>        9080/TCP   42s
+# service/productpage   ClusterIP   10.99.64.113     <none>        9080/TCP   42s
+# service/ratings       ClusterIP   10.98.143.228    <none>        9080/TCP   42s
+# service/reviews       ClusterIP   10.101.1.40      <none>        9080/TCP   42s
+
+# NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
+# deployment.apps/details-v1       1/1     1            1           42s
+# deployment.apps/productpage-v1   1/1     1            1           42s
+# deployment.apps/ratings-v1       1/1     1            1           42s
+# deployment.apps/reviews-v1       1/1     1            1           42s
+# ...
+
+# NAME                                       DESIRED   CURRENT   READY   AGE
+# replicaset.apps/details-v1-698d88b         1         1         1       42s
+# replicaset.apps/productpage-v1-675fc69cf   1         1         1       42s
+# replicaset.apps/ratings-v1-6484c4d9bb      1         1         1       42s
+# replicaset.apps/reviews-v1-5b5d6494f4      1         1         1       42s
+# ...
+```
+
+파드에서 실행중인 컨테이너 이름 출력
+
+```sh
+kubectl get pod/details-v1-698d88b-6ppfv -n book-demo -o=jsonpath='{.spec.containers[*].name}' | tr ' ' '\n'
+
+# details
+# istio-proxy
+```
+
+### kiali
+
+
+```sh
+helm repo add istio https://kiali.org/helm-charts
+
+helm search repo kiali
+
+# 압축파일 다운로드, kiali-server-1.80.0.tgz 버전 설치됨
+helm fetch kiali/kiali-server
+
+# 압축 파일 해제
+tar zxvf kiali-server-*.tgz
+mv kiali-server kiali-server-helm
+```
+
+```yaml
+istio_namespace: "istio-system" # default is where Kiali is installed
+
+auth:
+  openid: {}
+  openshift: {}
+  strategy: "anonymous"
+
+server:
+  port: 20001
+  observability:
+    metrics:
+      enabled: true
+      port: 9090
+  web_root: "/dashboards/kiali"
+  web_fqdn: kiali.istio.local
+```
+
+```sh
+# base-helm
+helm install kiali-server -f values.yaml . -n istio-system
+```
+
+`kiali.istio.local` hosts 파일에 등록 후 접속
+
+<https://kiali.istio.local/dashboards/kiali> 접속
