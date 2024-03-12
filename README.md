@@ -519,8 +519,6 @@ server:
     annotations: {
       kubernetes.io/ingress.class: nginx
     }
-    ```
-    
     ...
     # https redirect 방지
     server.insecure: true
@@ -1295,7 +1293,7 @@ kubectl get crd
 # ...
 ```
 
-`Istio discovery chart` 설치
+`Istio deamon chart` 설치
 
 ```sh
 # istiod-helm
@@ -1318,7 +1316,6 @@ kubectl get all -n istio-system
 # horizontalpodautoscaler.autoscaling/istiod   Deployment/istiod   <unknown>/80%   1         5         1          6m26s
 ```
 
-
 ```sh
 helm ls -n istio-system
 # NAME            NAMESPACE       REVISION   ...  STATUS    ...  APP VERSION
@@ -1326,8 +1323,12 @@ helm ls -n istio-system
 # istiod          istio-system    1          ...  deployed  ...  1.20.3     
 ```
 
-book-demo namespace 에 istio-injection 라벨을 설정하고 실행.
-생성되는 pod 에 
+### 데모서비스 실행
+
+> <https://istio.io/latest/docs/examples/bookinfo/>
+
+`book-demo` `namespace` 에 `istio-injection` 라벨을 설정하고 실행.
+생성되는 `book-demo` `namespace` 에서 생성되는 pod 에 istio sidecar 가 같이 실행되는지 확인  
 
 ```sh
 kubectl create namespace book-demo
@@ -1371,8 +1372,77 @@ kubectl get pod/details-v1-698d88b-6ppfv -n book-demo -o=jsonpath='{.spec.contai
 # istio-proxy
 ```
 
-### kiali
+### 관측 백엔드 통합  
 
+> <https://istio.io/latest/docs/ops/integrations/prometheus/>  
+> <https://github.com/istio/istio/tree/master/samples/addons/>  
+
+`istio` 에서 제공하는 `addon` 을 통해 `[prometheus, jeager, grafana]` 등을 설치할 수 있다.  
+
+기존에 설치해둔 `prometheus` 와 `tempo` 가 있음으로 `addon` 으로 설치하지 않고 추가 설정을 통해 통합을 진행한다.  
+
+기존에 설치했던 `prometheus` 의 `additionalScrapeConfigs` 에 아래와 같이 istio 관측 데이터를 수집할 수 있도록 구성.  
+
+```yaml
+prometheus:
+  ...
+  prometheusSpec:
+  ...
+    additionalScrapeConfigs:
+      - job_name: 'istiod' # control plan 수집
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - istio-system
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: istiod;http-monitoring
+      - job_name: 'envoy-stats' # data plan 수집
+        metrics_path: /stats/prometheus
+        kubernetes_sd_configs:
+        - role: pod
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_container_port_name]
+          action: keep
+          regex: '.*-envoy-prom'
+```
+
+실제 istio 데모로 올렸던 `pod` 의 `ports.name` 에 `regex` 에 맞는 문자열이 설정되어있다.  
+
+```sh
+kubectl get pod details-v1-698d88b-6ppfv -o=jsonpath='{.spec.containers[*].ports[*].name}' -n book-demo 
+# http-envoy-prom
+```
+
+`envoy` 에서 관측데이터 전달을 `zipkin b3` 방식만 사용 가능함으로, `tempo-helm` 의 `values.yaml` 에 `zipkin` 프로토콜 수신지 설정
+
+```yaml
+tempo:
+  ...
+  receiver:
+  ...
+    zipkin:
+      endpoint: "0.0.0.0:9411"
+```
+
+`envoy` 에서 `trace` 관측데이터를 `zipkin` 이나 `jeager` 로 전달하도록 `defaultConfig` 를 수정
+
+```yaml
+meshConfig:
+  enablePrometheusMerge: true
+  enableTracing: true
+  defaultConfig: # envoy default config
+    tracing:
+      zipkin:
+        address: tempo.tempo.svc.cluster.local:9411
+      sampling: 100.0
+```
+
+이제 모든 `envoy` 에서 위 `address` 로 `trace` 데이터를 전달한다.  
+
+### kiali
 
 ```sh
 helm repo add istio https://kiali.org/helm-charts
@@ -1387,6 +1457,8 @@ tar zxvf kiali-server-*.tgz
 mv kiali-server kiali-server-helm
 ```
 
+`kiali` 의 관측데이터는 `prometheus` 를 통해 표시 및 계산된다. 기존에 생성해둔 `thanos` 기반 `prometheus` 쿼리기를 사용
+
 ```yaml
 istio_namespace: "istio-system" # default is where Kiali is installed
 
@@ -1394,7 +1466,20 @@ auth:
   openid: {}
   openshift: {}
   strategy: "anonymous"
-
+...
+external_services:
+  custom_dashboards:
+    enabled: true
+  istio:
+    root_namespace: ""
+  prometheus:
+    url: "http://thanos-query-frontend.thanos.svc.cluster.local:9090/"
+  tracing:
+    enabled: true
+    in_cluster_url: "http://tempo.tempo.svc.cluster.local:3100/"
+    provider: "tempo"
+    use_grpc: false
+...
 server:
   port: 20001
   observability:
@@ -1403,6 +1488,7 @@ server:
       port: 9090
   web_root: "/dashboards/kiali"
   web_fqdn: kiali.istio.local
+
 ```
 
 ```sh
