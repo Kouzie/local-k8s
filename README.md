@@ -170,9 +170,10 @@ metadata:
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/part-of: ingress-nginx
     app.kubernetes.io/version: 1.9.1
-    metallb.universe.tf/allow-shared-ip: "my-lb-service"
   name: ingress-nginx-controller
   namespace: ingress-nginx
+  annotations:
+    metallb.universe.tf/allow-shared-ip: my-lb-service
 spec:
   ipFamilies:
   - IPv4
@@ -1321,6 +1322,33 @@ helm ls -n istio-system
 # NAME            NAMESPACE       REVISION   ...  STATUS    ...  APP VERSION
 # istio-base      istio-system    1          ...  deployed  ...  1.20.3     
 # istiod          istio-system    1          ...  deployed  ...  1.20.3     
+```
+
+### instio ingress gateway controller 설치  
+
+> <https://istio.io/latest/docs/setup/additional-setup/gateway/>
+
+위 url 에서 요구한대로 `Kubernetes YAML` 기반으로 `LoadBalancer, Deployment, Role, RoleBinding` 생성
+
+단 LoadBalancer 의 경우 이미 nginx-ingress 가 80, 443 포트를 사용중임으로  
+istio-ingress 는 8080,8443 을 사용하도록 설정.
+
+그리고 MetalLB 를 사용중임으로 아래 annotation 지정 필요.
+
+```yaml
+# ingress.yaml
+# ...
+metadata:
+  name: istio-ingressgateway
+  namespace: istio-ingress
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "my-lb-service"
+# ...
+```
+
+```sh
+kubectl create namespace istio-ingress
+kubectl apply -f ingress.yaml
 ```
 
 ### 데모서비스 실행
