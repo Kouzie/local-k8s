@@ -343,6 +343,8 @@ metadata:
     app.kubernetes.io/version: 1.9.1
   name: ingress-nginx-controller
   namespace: ingress-nginx
+  annotations:
+    metallb.universe.tf/allow-shared-ip: my-lb-service
 spec:
   ipFamilies:
   - IPv4
