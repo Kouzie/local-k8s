@@ -1,0 +1,55 @@
+kind: DestinationRule
+apiVersion: networking.istio.io/v1beta1
+metadata:
+  namespace: book-demo
+  name: reviews
+spec:
+  host: reviews.book-demo.svc.cluster.local # service DNS name
+  subsets:
+    - name: subset-v1 # subset name
+      labels: # selector
+        version: v1 # label name
+    - name: subset-v2
+      labels:
+        version: v2
+    - name: subset-v3
+      labels:
+        version: v3
+  trafficPolicy: ~
+---
+kind: VirtualService
+apiVersion: networking.istio.io/v1beta1
+metadata:
+  namespace: book-demo
+  name: reviews-vs # virtual service name
+spec:
+  hosts: 
+    - reviews.book-demo.svc.cluster.local # service DNS name
+  gateways: ~
+  http: # http 라우팅 규칙
+    - match: # prefix 라우팅
+      - headers: # http header 에
+          end-user: # end-user:jason 이 있을경우 라우팅
+            exact: jason
+      - uri: # OR
+          prefix: /
+        queryParams: # ANd query 에
+          u: # u=normal 일 경우
+            exact: normal
+      route: # 조건일치 목적지
+        - destination:
+            host: reviews.book-demo.svc.cluster.local # service DNS name
+            subset: subset-v1 # DestinationRule 정의된 subset
+    - route: # 기본 라우팅
+      - destination:
+          host: reviews.book-demo.svc.cluster.local # service DNS name
+          subset: subset-v2 # DestinationRule 정의된 subset
+        weight: 50 # weight-based routing
+      - destination:
+          host: reviews.book-demo.svc.cluster.local # service DNS name
+          subset: subset-v3 # DestinationRule 정의된 subset
+        weight: 50 # weight-based routing
+      timeout: 10s  # 시간초과
+      retries: # 재시도
+        attempts: 3
+        perTryTimeout: 2s
