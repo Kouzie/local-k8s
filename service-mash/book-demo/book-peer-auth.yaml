@@ -1,0 +1,10 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: example-peer-policy
+  namespace: book-demo # foo namespace 안에서 해당 피어인증정책 사용
+spec:
+  mtls:
+    mode: PERMISSIVE # 일반 텍스트, TLS 모두 허용, default 값
+    # mode: STRICT # TLS 트래픽만 허용
+    # mode: DISABLE # 상호 TLS 비활성화

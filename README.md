@@ -1040,6 +1040,7 @@ kubectl create secret generic thanos-objstore-secret --from-file=objstore.yml -n
 ```
 
 사이드카 방식을 사용함으로 receive 컴포넌트를 제외한 모든 컴포넌트를 `enable: true` 로 설정  
+prometheus 의 thanos sidecar, alert manager 연동을 진행.  
 
 ```sh
 existingObjstoreSecret: "thanos-objstore-secret"
