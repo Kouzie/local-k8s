@@ -631,8 +631,10 @@ agent:
   namespace:
   # private registry for agent image
   jnlpregistry:
-  image: "jenkins/inbound-agent"
-  tag: "3107.v665000b_51092-15"
+  # image: "jenkins/inbound-agent"
+  # tag: "3107.v665000b_51092-15"
+  image: "core.harbor.domain/library/jenkins/inbound-agent"
+  tag: "aws-cli6"
   workingDir: "/home/jenkins/agent"
   nodeUsageMode: "NORMAL"
   customJenkinsLabels: []
@@ -647,11 +649,11 @@ agent:
   hostNetworking: false
   resources:
     requests:
-      cpu: "512m"
-      memory: "512Mi"
+      cpu: "1"
+      memory: "1Gi"
     limits:
-      cpu: "512m"
-      memory: "512Mi"
+      cpu: "1"
+      memory: "1Gi"
   livenessProbe: {}
 #    execArgs: "cat /tmp/healthy"
 #    failureThreshold: 3

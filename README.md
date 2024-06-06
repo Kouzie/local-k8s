@@ -380,7 +380,7 @@ tar zxvf jenkins-*.tgz
 mv jenkins jenkins-helm
 ```
 
-`Ingress, StoreClass` 설정 수정.  
+`Ingress, StoreClass, agent` 설정 수정.  
 
 ```yaml
   ingress:
@@ -402,6 +402,17 @@ persistence:
   storageClass: "local-path"
 
 jenkinsUrl: "https://jenkins.cluster.local"
+
+agent:
+  ...
+  # image: "jenkins/inbound-agent"
+  # tag: "3107.v665000b_51092-15"
+  image: "core.harbor.domain/library/jenkins/inbound-agent"
+  tag: "aws-cli"
+  ...
+  # You may want to change this to true while testing a new image
+  alwaysPullImage: false
+  ...
 ```
 
 ```shell
@@ -492,6 +503,18 @@ admin/...
 # 비밀번호 확인
 kubectl exec --namespace jenkins -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
 ```
+
+### aws cli 용 jenkins 이미지 생성
+
+pipeline 에서 사용할 각종 client 툴을 설치한 상태로 jenkins agent 를 실행하기 위해 커스텀 이미지 생성
+
+```
+docker build --platform linux/amd64 -t jenkins_aws_dockerfile -f jenkins_aws_dockerfile .
+docker tag jenkins_aws_dockerfile core.harbor.domain/library/jenkins/inbound-agent:aws-cli
+docker push core.harbor.domain/library/jenkins/inbound-agent:aws-cli
+```
+
+
 
 ## argoCd
 

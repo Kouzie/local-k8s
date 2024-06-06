@@ -1,0 +1,29 @@
+# Jenkins Agent
+FROM jenkins/inbound-agent:3107.v665000b_51092-15
+ENV TZ=Asia/Seoul
+
+USER root
+
+# install packages
+RUN apt-get -y update \
+    && apt-get -y upgrade \
+    && apt-get -y install sudo curl bash jq npm vim tini \
+    && apt-get -y install procps apt-utils wget\
+    && usermod --shell /bin/bash jenkins
+
+# python2,3 install
+RUN apt-get -y install python \
+&& curl -k https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py \
+&& python get-pip.py && rm get-pip.py\
+&& pip install virtualenv \
+&& apt-get -y install \
+    python${PYTHON_VERSION} \
+    python3-pip \
+    python3-venv
+
+# install AWS CLI
+RUN set +x \
+    && pip3 install awscli --upgrade
+
+USER jenkins
+ENTRYPOINT ["/usr/local/bin/jenkins-agent"]
