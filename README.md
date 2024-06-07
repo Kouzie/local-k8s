@@ -402,22 +402,13 @@ persistence:
   storageClass: "local-path"
 
 jenkinsUrl: "https://jenkins.cluster.local"
-
-agent:
-  ...
-  # image: "jenkins/inbound-agent"
-  # tag: "3107.v665000b_51092-15"
-  image: "core.harbor.domain/library/jenkins/inbound-agent"
-  tag: "aws-cli"
-  ...
-  # You may want to change this to true while testing a new image
-  alwaysPullImage: false
-  ...
 ```
 
 ```shell
 cd jenkins-helm
 # namespace 생성
+
+
 kubectl create ns jenkins
 helm install jenkins -f values.yaml . -n jenkins
 watch kubectl get pods -n jenkins
@@ -427,38 +418,25 @@ watch kubectl get pods -n jenkins
 
 > <https://stackoverflow.com/questions/41930608/jenkins-git-integration-how-to-disable-ssl-certificate-validation>
 
-사내 git 서버를 사용중이고 `unknown 서명된 인증서` 를 사용중이라면 아래와 같은 오류문구가 뜰 수 있다.  
+사설 git 서버를 사용중이고 `unknown 서명된 인증서` 를 사용중이라면 아래와 같은 오류문구가 뜰 수 있다.  
 
 ```
 SSL certificate problem: self signed certificate in certificate chain
 ```
 
-`master, agent` 모두 `git ssl` 을 무시하는 환경변수 설정.  
+`jenkins controller` 에서 `git ssl` 을 무시하는 환경변수 설정.  
 
 ```yaml
 # master ssl disable
 controller:
   ...
-  initContainerEnv:
-    - name: "GIT_SSL_NO_VERIFY"
-      value: "true"
   containerEnv:
     - name: "GIT_SSL_NO_VERIFY"
       value: "true"
-
-...
-
-# agent ssl disable
-agent:
-  enabled: true
-  ...
-  # Pod-wide environment, these vars are visible to any container in the agent pod
-  envVars: 
-  - name: "GIT_SSL_NO_VERIFY"
-    value: "true"
 ```
 
-`PotTemplate` 과 같은 `jenkins pipeline` 문법을 사용할 경우 `values.yaml` 에서 설정한 환경변수가 `agent` 에서 동작하지 않기 때문에 아래와 같이 `Jenkinsfile` 에서 직접 환경변수 지정하는것을 권장  
+`PotTemplate` 과 같은 `jenkins pipeline` 문법을 사용할 경우 `agent` 에서도 GIT SSL 설정을 할수 있도록  
+아래와 같이 `Jenkinsfile` 에서 직접 환경변수 지정하는것을 권장  
 
 ```groovy
 podTemplate(
@@ -504,17 +482,50 @@ admin/...
 kubectl exec --namespace jenkins -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
 ```
 
-### aws cli 용 jenkins 이미지 생성
+### aws cli 용 jenkins 이미지생성, PVC 설정
 
-pipeline 에서 사용할 각종 client 툴을 설치한 상태로 jenkins agent 를 실행하기 위해 커스텀 이미지 생성
+진행하면서 agent 에러가 발생할 경우 `podRetention: "Always"` 로 변경 후 log 와 describe 명령어로 controller, agent 모두 확인해야함.  
 
-```
+```sh
 docker build --platform linux/amd64 -t jenkins_aws_dockerfile -f jenkins_aws_dockerfile .
 docker tag jenkins_aws_dockerfile core.harbor.domain/library/jenkins/inbound-agent:aws-cli
 docker push core.harbor.domain/library/jenkins/inbound-agent:aws-cli
 ```
 
+jenkins agent workspace 용 pvc 생성
 
+```sh
+kubectl apply -f jeknins-agent-pvc.yaml 
+persistentvolumeclaim/jenkins-agent-pvc created
+```
+
+홈 디레토리 위치에 gradle 캐시 라이브러리들이 저장되는데, 홈 디렉토리를 pvc 로 등록하여 build 시간을 단축시킬 수 있다.  
+`$HOME/.gradle/cache` 에 이미 저장되어 있는 라이브러리들 사용
+
+```yaml
+agent:
+  ...
+  # image: "jenkins/inbound-agent"
+  # tag: "3107.v665000b_51092-15"
+  image: "core.harbor.domain/library/jenkins/inbound-agent"
+  tag: "aws-cli"
+  ...
+  # gradle Out of Memory 에러 발생하여 resources 를 늘려야함
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  ...
+  volumes:
+  ...
+  - type: PVC
+    claimName: jenkins-agent-pvc
+    mountPath: "/home/jenkins" # home 
+    readOnly: false
+```
 
 ## argoCd
 
